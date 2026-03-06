@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: SFLWA PBC Property Appraiser Bridge
- * Version: 1.2.5
+ * Version: 1.2.9
  * Author: Philip Levine
  */
 
@@ -18,7 +18,7 @@ class SFLWA_PBC_Loader {
 
 class SFLWAPBCAddOn extends GFAddOn {
 
-    protected $_version = '1.2.5';
+    protected $_version = '1.2.9';
     protected $_min_gravityforms_version = '2.5';
     protected $_slug = 'gf-pbc-gis';
     protected $_path = 'gf-pbc-gis/gf-pbc-gis.php';
@@ -44,7 +44,20 @@ class SFLWAPBCAddOn extends GFAddOn {
         $merge_tags[] = array( 'group' => 'pbc_verification', 'label' => 'PBC: Full Result Box', 'tag' => '{pbc_raw_data}' );
         $merge_tags[] = array( 'group' => 'pbc_verification', 'label' => 'PBC: Match Status', 'tag' => '{pbc_match_status}' );
         $merge_tags[] = array( 'group' => 'pbc_verification', 'label' => 'PBC: Master Search Link', 'tag' => '{pbc_search_url}' );
+        $merge_tags[] = array( 'group' => 'pbc_verification', 'label' => 'PBC: Parcel Number (PCN)', 'tag' => '{pbc_pcn}' );
         return $merge_tags;
+    }
+
+    public function settings_merge_tags() {
+        echo '<div style="background:#f9f9f9; padding:15px; border:1px solid #ddd; border-radius:4px; margin-top:10px;">';
+        echo '<h4 style="margin-top:0;">Available Merge Tags</h4>';
+        echo '<p style="font-size:12px; color:#666;">Copy these into your Notifications or Confirmations:</p>';
+        echo '<ul style="margin:0; padding-left:20px; line-height:1.8;">';
+        echo '<li><code>{pbc_match_status}</code> - Displays Matched, Mismatch, or Not Found</li>';
+        echo '<li><code>{pbc_raw_data}</code> - Displays the full branded result table</li>';
+        echo '<li><code>{pbc_pcn}</code> - Displays the Parcel Control Number</li>';
+        echo '<li><code>{pbc_search_url}</code> - Direct link to Master Search results</li>';
+        echo '</ul></div>';
     }
 
     public function register_meta_box( $meta_boxes, $entry, $form ) {
@@ -73,7 +86,6 @@ class SFLWAPBCAddOn extends GFAddOn {
         $status = gform_get_meta( $entry['id'], 'pbc_status' );
         $owner  = gform_get_meta( $entry['id'], 'pbc_owner' );
         $pcn    = gform_get_meta( $entry['id'], 'pbc_pcn' );
-        $search = gform_get_meta( $entry['id'], 'pbc_search_url' );
         
         $html = '<div style="line-height:1.6;">';
         $color = ( $status === 'Matched' ) ? '#27ae60' : '#e74c3c';
@@ -85,14 +97,10 @@ class SFLWAPBCAddOn extends GFAddOn {
         }
 
         $html .= '<div style="margin-top:10px;">';
-        $html .= sprintf( '<input type="submit" value="%s" class="button" onclick="jQuery(\'#action\').val(\'%s\');" style="width:100%%; margin-bottom:5px;" />', esc_attr__( 'Trigger API Lookup', 'gf-pbc-gis' ), $action );
+        $html .= sprintf( '<input type="submit" value="Re-Run Lookup" class="button" onclick="jQuery(\'#action\').val(\'%s\');" style="width:100%%; margin-bottom:5px;" />', $action );
         
         if ( $pcn ) {
-            $html .= sprintf( '<a href="https://pbcpao.gov/Property/Details?parcelId=%s" target="_blank" class="button button-primary" style="display:block; text-align:center; margin-bottom:5px;">View Official Record</a>', $pcn );
-        }
-
-        if ( $search ) {
-            $html .= sprintf( '<a href="%s" target="_blank" class="button button-secondary" style="display:block; text-align:center;">Master Search Results</a>', esc_url($search) );
+            $html .= sprintf( '<a href="https://pbcpao.gov/Property/Details?parcelId=%s" target="_blank" class="button button-primary" style="display:block; text-align:center;">View Record</a>', $pcn );
         }
         
         $html .= '</div></div>';
@@ -105,16 +113,28 @@ class SFLWAPBCAddOn extends GFAddOn {
                 'title'  => 'PBC API Settings',
                 'fields' => array(
                     array('label' => 'Enable PBC Verification', 'type' => 'toggle', 'name' => 'enabled'),
+                    array('label' => 'Condo Mode (Uses Site Address String)', 'type' => 'toggle', 'name' => 'condo_mode'),
+                    array(
+                        'label'   => 'Static Base Address',
+                        'type'    => 'text',
+                        'name'    => 'static_address',
+                        'placeholder' => 'Example: 2600 NE 1st Ln',
+                    ),
                     array(
                         'label'      => 'Field Mapping',
                         'type'       => 'field_map',
                         'name'       => 'field_mapping',
                         'field_type' => array( 'text', 'address', 'select', 'name' ),
                         'field_map'  => array(
-                            array( 'name' => 'house_number', 'label' => 'House Number Field' ),
-                            array( 'name' => 'street_name',  'label' => 'Street Name Field' ),
+                            array( 'name' => 'unit_number',   'label' => 'Unit Number Field' ),
                             array( 'name' => 'resident_name', 'label' => 'Resident Name Field' ),
+                            array( 'name' => 'base_addr_field', 'label' => 'Full Address Field (Alternative to Static)' ),
                         ),
+                    ),
+                    array(
+                        'type'     => 'html',
+                        'name'     => 'merge_tag_reference',
+                        'callback' => array( $this, 'settings_merge_tags' ),
                     ),
                 ),
             ),
@@ -130,47 +150,41 @@ class SFLWAPBCAddOn extends GFAddOn {
         if ( empty( $settings['enabled'] ) ) return false;
         if ( ! $force && gform_get_meta( $entry['id'], 'pbc_pcn' ) ) return true;
 
-        $house = $this->get_safe_value( $entry, 'house_number', $settings );
-        $street = $this->get_safe_value( $entry, 'street_name', $settings );
+        $unit = $this->get_safe_value( $entry, 'unit_number', $settings );
         $name = $this->get_safe_value( $entry, 'resident_name', $settings );
-
-        $full_address = trim($house . ' ' . $street);
-        $master_search_url = "https://pbcpao.gov/MasterSearch/SearchResults?propertyType=RE&searchvalue=" . urlencode($full_address);
-        gform_update_meta( $entry['id'], 'pbc_search_url', $master_search_url );
-
-        if ( empty($house) || empty($street) ) {
-            gform_update_meta( $entry['id'], 'pbc_status', 'Missing Input' );
-            return false;
-        }
-
-        // Logic to handle Citrus Trl vs Citrus
-        $clean_street = preg_replace('/\b(CIR|CIRCLE|DR|DRIVE|ST|STREET|AVE|AVENUE|RD|ROAD|TRL|TRAIL)\b/i', '', $street);
-        $clean_street = strtoupper(trim($clean_street));
+        $base = ! empty($settings['static_address']) ? $settings['static_address'] : $this->get_safe_value($entry, 'base_addr_field', $settings);
+        
+        if ( empty($base) ) return false;
 
         $api_base = "https://services1.arcgis.com/ZWOoUZbtaYePLlPw/arcgis/rest/services/Property_Information_Table/FeatureServer/0/query";
-        $where = "STREET_NUMBER = " . intval($house) . " AND STREET_NAME LIKE '" . esc_sql($clean_street) . "%'";
-        $api_url = add_query_arg( array( 'where' => $where, 'outFields' => 'PARCEL_NUMBER,OWNER_NAME1', 'f' => 'json' ), $api_base );
 
+        if ( ! empty($settings['condo_mode']) ) {
+            // Condo Mode uses verified SITE_ADDR_STR field
+            $full_string = strtoupper(trim($base . " " . $unit));
+            $where = "SITE_ADDR_STR LIKE '" . esc_sql($full_string) . "%'";
+        } else {
+            // Standard Split Logic
+            $addr_parts = explode(' ', trim($base), 2);
+            $house_num = $addr_parts[0];
+            $street_name = isset($addr_parts[1]) ? strtoupper($addr_parts[1]) : '';
+            $where = "STREET_NUMBER = " . intval($house_num) . " AND STREET_NAME LIKE '" . esc_sql($street_name) . "%'";
+        }
+
+        $api_url = add_query_arg( array( 'where' => $where, 'outFields' => 'PARCEL_NUMBER,OWNER_NAME1', 'f' => 'json' ), $api_base );
         $res = wp_remote_get( $api_url, array('timeout' => 25, 'user-agent' => 'Mozilla/5.0') );
-        $data = is_wp_error($res) ? array() : json_decode( wp_remote_retrieve_body($res), true );
-        
-        $note = "Lookup for: $full_address.\nAPI URL: $api_url\nMaster Search: $master_search_url\n\n";
+        $data = json_decode( wp_remote_retrieve_body($res), true );
 
         if ( ! empty($data['features']) ) {
             $attr = $data['features'][0]['attributes'];
             $match = $this->fuzzy_match( $name, $attr['OWNER_NAME1'] );
-            $status = $match ? 'Matched' : 'Mismatch';
-
-            gform_update_meta( $entry['id'], 'pbc_pcn', $attr['PARCEL_NUMBER'] );
+            gform_update_meta( $entry['id'], 'pbc_status', $match ? 'Matched' : 'Mismatch' );
             gform_update_meta( $entry['id'], 'pbc_owner', $attr['OWNER_NAME1'] );
-            gform_update_meta( $entry['id'], 'pbc_status', $status );
-            $note .= "Result: Success ($status). Owner: {$attr['OWNER_NAME1']}.";
+            gform_update_meta( $entry['id'], 'pbc_pcn', $attr['PARCEL_NUMBER'] );
         } else {
             gform_update_meta( $entry['id'], 'pbc_status', 'Not Found' );
-            $note .= "Result: Not Found in ArcGIS Table.";
         }
-
-        GFAPI::add_note( $entry['id'], 0, 'PBC Bridge', $note );
+        
+        GFAPI::add_note( $entry['id'], 0, 'PBC Bridge', "Query: $where\nAPI: $api_url" );
         return true;
     }
 
@@ -184,9 +198,7 @@ class SFLWAPBCAddOn extends GFAddOn {
                 }
             }
         }
-        $first = rgar( $entry, $field_id . '.3' );
-        $last  = rgar( $entry, $field_id . '.6' );
-        return ( ! empty( $first ) || ! empty( $last ) ) ? trim( $first . ' ' . $last ) : rgar( $entry, (string) $field_id );
+        return rgar( $entry, (string) $field_id );
     }
 
     private function fuzzy_match( $input, $official ) {
@@ -206,8 +218,7 @@ class SFLWAPBCAddOn extends GFAddOn {
         $this->get_pbc_data_for_entry( $form, $entry );
         $status = gform_get_meta( $entry['id'], 'pbc_status' ) ?: 'Not Verified';
         $owner  = gform_get_meta( $entry['id'], 'pbc_owner' ) ?: 'N/A';
-        $pcn    = gform_get_meta( $entry['id'], 'pbc_pcn' );
-        $search = gform_get_meta( $entry['id'], 'pbc_search_url' );
+        $pcn    = gform_get_meta( $entry['id'], 'pbc_pcn' ) ?: 'N/A';
         $color  = ($status === 'Matched') ? '#27ae60' : '#e74c3c';
         
         $html_summary = "
@@ -224,17 +235,17 @@ class SFLWAPBCAddOn extends GFAddOn {
                         </td></tr>
                         <tr><td style='padding-top: 10px;'>
                             <span style='font-size: 11px; font-weight: bold; color: #919da5;'>PARCEL CONTROL NUMBER (PCN)</span><br>
-                            <span style='font-size: 14px; color: #2c3e50;'>" . ($pcn ?: 'Not Found') . "</span>
+                            <span style='font-size: 14px; color: #2c3e50;'>$pcn</span>
                         </td></tr>
                     </table>
                 </td></tr>
-                <tr><td style='padding: 15px; background-color: #ffffff; border-top: 1px solid #f0f3f5;'>";
-        
-        if ($pcn) { $html_summary .= "<a href='https://pbcpao.gov/Property/Details?parcelId=$pcn' style='display: inline-block; padding: 10px 16px; background-color: #0073aa; color: #ffffff; text-decoration: none; border-radius: 3px; font-size: 14px; font-weight: bold; margin-right: 10px;'>View Record</a>"; }
-        if ($search) { $html_summary .= "<a href='$search' style='display: inline-block; padding: 10px 16px; border: 1px solid #0073aa; color: #0073aa; text-decoration: none; border-radius: 3px; font-size: 14px; font-weight: bold;'>Master Search</a>"; }
-        
-        $html_summary .= "</td></tr></table>";
-        $text = str_replace( array('{pbc_match_status}', '{pbc_search_url}', '{pbc_raw_data}'), array("<span style='color:$color; font-weight:bold;'>$status</span>", $search, $html_summary), $text );
+            </table>";
+
+        $text = str_replace( 
+            array('{pbc_match_status}', '{pbc_raw_data}', '{pbc_pcn}'), 
+            array("<span style='color:$color; font-weight:bold;'>$status</span>", $html_summary, $pcn), 
+            $text 
+        );
         return $text;
     }
 }
