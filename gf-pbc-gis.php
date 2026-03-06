@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: SFLWA PBC Property Appraiser Bridge
- * Version: 1.3.3
+ * Version: 1.3.5
  * Author: Philip Levine
  */
 
@@ -18,7 +18,8 @@ class SFLWA_PBC_Loader {
 
 class SFLWAPBCAddOn extends GFAddOn {
 
-    protected $_version = '1.3.3';
+    protected $_version = '1.3.5';
+    protected $_min_gravityforms_version = '2.5';
     protected $_slug = 'gf-pbc-gis';
     protected $_path = 'gf-pbc-gis/gf-pbc-gis.php';
     protected $_full_path = __FILE__;
@@ -37,6 +38,23 @@ class SFLWAPBCAddOn extends GFAddOn {
         add_filter( 'gform_entry_detail_meta_boxes', array( $this, 'register_meta_box' ), 10, 3 );
         add_filter( 'gform_replace_merge_tags', array( $this, 'replace_merge_tags' ), 10, 7 );
         add_filter( 'gform_admin_merge_tags', array( $this, 'add_merge_tags' ), 10, 3 );
+        
+        // Ensure meta registration is hooked early
+        add_filter( 'gform_entry_meta', array( $this, 'register_entry_meta' ), 10, 2 );
+    }
+
+    /**
+     * Specifically registers the status for the Entries List
+     */
+    public function register_entry_meta( $entry_meta, $form_id ) {
+        // We register it globally for the plugin to ensure it shows in the UI
+        $entry_meta['pbc_status'] = array(
+            'label'             => 'Match Status',
+            'is_numeric'        => false,
+            'update_entry_meta_callback' => null,
+            'is_default_column' => true,
+        );
+        return $entry_meta;
     }
 
     public function add_merge_tags( $merge_tags, $form_id, $fields ) {
@@ -44,11 +62,11 @@ class SFLWAPBCAddOn extends GFAddOn {
         $merge_tags[] = array( 'group' => 'pbc_verification', 'label' => 'PBC: Match Status', 'tag' => '{pbc_match_status}' );
         $merge_tags[] = array( 'group' => 'pbc_verification', 'label' => 'PBC: Parcel Number (PCN)', 'tag' => '{pbc_pcn}' );
         $merge_tags[] = array( 'group' => 'pbc_verification', 'label' => 'PBC: Owners List', 'tag' => '{pbc_owners}' );
+        $merge_tags[] = array( 'group' => 'pbc_verification', 'label' => 'PBC: Master Search Link', 'tag' => '{pbc_search_url}' );
         return $merge_tags;
     }
 
-
-public function settings_merge_tags() {
+    public function settings_merge_tags() {
         echo '<div style="background:#f9f9f9; padding:15px; border:1px solid #ddd; border-radius:4px; margin-top:10px;">';
         echo '<h4 style="margin-top:0;">Available Merge Tags</h4>';
         echo '<p style="font-size:12px; color:#666;">Copy these into your Notifications or Confirmations:</p>';
@@ -90,11 +108,13 @@ public function settings_merge_tags() {
         $color = ( $status === 'Matched' ) ? '#27ae60' : '#e74c3c';
         echo '<div style="line-height:1.6;">';
         echo '<strong>Status:</strong> <span style="color:'.$color.'; font-weight:bold;">' . esc_html( $status ?: 'Not Run' ) . '</span><br>';
+        
         if ( $pcn ) {
             echo '<strong>Owner 1:</strong> ' . esc_html( $o1 ) . '<br>';
             if ($o2) echo '<strong>Owner 2:</strong> ' . esc_html( $o2 ) . '<br>';
             echo '<strong>PCN:</strong> ' . esc_html( $pcn ) . '<br>';
         }
+
         echo '<div style="margin-top:10px;">';
         echo sprintf( '<input type="submit" value="Re-Run Lookup" class="button" onclick="jQuery(\'#action\').val(\'%s\');" style="width:100%%; margin-bottom:5px;" />', $action );
         if ( $pcn ) {
@@ -135,16 +155,11 @@ public function settings_merge_tags() {
     private function fuzzy_match( $first, $last, $official ) {
         $official = strtolower(trim($official));
         if (empty($first) || empty($last) || empty($official)) return false;
-
         $official = str_replace(array(',', '&'), ' ', $official);
-
         $first = strtolower(trim($first));
         $last  = strtolower(trim($last));
-        
-        // Variation 1: "shelton fox" | Variation 2: "fox shelton"
         $v1 = $first . ' ' . $last;
         $v2 = $last . ' ' . $first;
-
         return (strpos($official, $v1) !== false || strpos($official, $v2) !== false);
     }
 
@@ -153,7 +168,6 @@ public function settings_merge_tags() {
         if ( empty( $settings['enabled'] ) ) return false;
         if ( ! $force && gform_get_meta( $entry['id'], 'pbc_pcn' ) ) return true;
 
-        // Correctly capture complex sub-fields for First (.3) and Last (.6)
         $name_field_id = rgar( $settings, "field_mapping_resident_name" );
         $fname = rgar( $entry, $name_field_id . '.3' ); 
         $lname = rgar( $entry, $name_field_id . '.6' );
@@ -164,7 +178,8 @@ public function settings_merge_tags() {
         if ( empty($base) ) return false;
 
         if ( ! empty($settings['condo_mode']) ) {
-            $where = "SITE_ADDR_STR LIKE '" . esc_sql(strtoupper(trim($base . " " . $unit))) . "%'";
+            $full_string = strtoupper(trim($base . " " . $unit));
+            $where = "SITE_ADDR_STR LIKE '" . esc_sql($full_string) . "%'";
         } else {
             $parts = explode(' ', trim($base), 2);
             $where = "STREET_NUMBER = " . intval($parts[0] ?? 0) . " AND STREET_NAME LIKE '" . esc_sql(strtoupper($parts[1] ?? '')) . "%'";
@@ -178,7 +193,6 @@ public function settings_merge_tags() {
             $attr = $data['features'][0]['attributes'];
             $o1 = $attr['OWNER_NAME1'] ?? '';
             $o2 = $attr['OWNER_NAME2'] ?? '';
-            
             $match = $this->fuzzy_match($fname, $lname, $o1) || $this->fuzzy_match($fname, $lname, $o2);
             
             gform_update_meta( $entry['id'], 'pbc_status', $match ? 'Matched' : 'Mismatch' );
@@ -189,7 +203,7 @@ public function settings_merge_tags() {
             gform_update_meta( $entry['id'], 'pbc_status', 'Not Found' );
         }
         
-        GFAPI::add_note( $entry['id'], 0, 'PBC Bridge', "Searched: $fname $lname against $o1 / $o2" );
+        GFAPI::add_note( $entry['id'], 0, 'PBC Bridge', "Query: $where\nMatch: $fname $lname against $o1 / $o2" );
         return true;
     }
 
@@ -224,8 +238,8 @@ public function settings_merge_tags() {
             </table>";
 
         return str_replace( 
-            array('{pbc_match_status}', '{pbc_raw_data}', '{pbc_pcn}', '{pbc_owners}'), 
-            array("<span style='color:$color; font-weight:bold;'>$status</span>", $html_summary, $pcn, $owners_display), 
+            array('{pbc_match_status}', '{pbc_raw_data}', '{pbc_pcn}', '{pbc_owners}', '{pbc_search_url}'), 
+            array("<span style='color:$color; font-weight:bold;'>$status</span>", $html_summary, $pcn, $owners_display, "https://pbcpao.gov/MasterSearch/SearchResults"), 
             $text 
         );
     }
