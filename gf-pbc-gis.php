@@ -1,8 +1,17 @@
 <?php
 /**
- * Plugin Name: SFLWA PBC Property Appraiser Bridge
- * Version: 1.3.5
- * Author: Philip Levine
+ * Plugin Name:       SFLWA Gravity Forms PBC Property Appraiser Lookup
+ * Plugin URI:        https://github.com/sflwa/gf-pbc-gis/
+ * Description:       Verifies property ownership via PBC GIS for HOAs and Condos. Includes "Condo Mode" for unit-specific lookups.
+ * Version:           1.3.5
+ * Requires at least: 6.9
+ * Requires PHP:      8.3
+ * Author:            South Florida Web Advisors
+ * Author URI:        https://sflwa.com/
+ * License:           GPLv2 or later
+ * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
+ * Text Domain:       gf-pbc-gis
+ * Requires Plugins:  gravityforms
  */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
