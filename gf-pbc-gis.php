@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       SFLWA Gravity Forms PBC Property Appraiser Lookup
  * Plugin URI:        https://github.com/sflwa/gf-pbc-gis/
- * Description:       Verifies property ownership via PBC GIS for HOAs and Condos. Features unordered fuzzy matching and Condo Mode.
- * Version:           1.4.4
+ * Description:       Verifies property ownership via PBC GIS for HOAs and Condos. Includes "Condo Mode" for unit-specific lookups.
+ * Version:           1.5.5
  * Requires at least: 6.9
  * Requires PHP:      8.3
  * Author:            South Florida Web Advisors
@@ -17,6 +17,37 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
+// 1. ADD THE ACTION TO THE LIST
+add_filter( 'gform_entry_list_bulk_actions', 'sflwa_pbc_add_bulk_action', 10, 2 );
+function sflwa_pbc_add_bulk_action( $actions, $form_id ) {
+    // We check the DB for our settings slug directly
+    $form_meta = RGFormsModel::get_form_meta( $form_id );
+    
+    if ( isset( $form_meta['gf-pbc-gis'] ) && ! empty( $form_meta['gf-pbc-gis']['enabled'] ) ) {
+        $actions['pbc_bulk_lookup'] = 'Trigger PBC Lookup';
+    }
+    return $actions;
+}
+
+// 2. HANDLE THE ACTION
+add_action( 'gform_entry_list_action', 'sflwa_pbc_handle_bulk_action', 10, 3 );
+function sflwa_pbc_handle_bulk_action( $action, $entries, $form_id ) {
+    if ( $action !== 'pbc_bulk_lookup' ) return;
+
+    $addon = SFLWAPBCAddOn::get_instance();
+    $form = GFAPI::get_form( $form_id );
+    
+    foreach ( $entries as $entry_id ) {
+        $entry = GFAPI::get_entry( $entry_id );
+        if ( ! is_wp_error( $entry ) ) {
+            $addon->get_pbc_data_for_entry( $form, $entry, true );
+        }
+    }
+    // Fixed: Use GFCommon::add_message to avoid Fatal Error
+    GFCommon::add_message( count( $entries ) . ' entries processed for PBC Lookup.' );
+}
+
+// 3. THE PLUGIN CORE
 add_action( 'gform_loaded', array( 'SFLWA_PBC_Loader', 'load' ), 5 );
 
 class SFLWA_PBC_Loader {
@@ -28,7 +59,7 @@ class SFLWA_PBC_Loader {
 
 class SFLWAPBCAddOn extends GFAddOn {
 
-    protected $_version = '1.4.4';
+    protected $_version = '1.5.5';
     protected $_slug = 'gf-pbc-gis';
     protected $_path = 'gf-pbc-gis/gf-pbc-gis.php';
     protected $_full_path = __FILE__;
@@ -55,6 +86,15 @@ class SFLWAPBCAddOn extends GFAddOn {
             'label'             => 'Match Status',
             'is_numeric'        => false,
             'is_default_column' => true,
+            'filter'            => array(
+                'operators' => array( 'is', 'isnot' ),
+                'choices'   => array(
+                    array( 'text' => 'Matched', 'value' => 'Matched' ),
+                    array( 'text' => 'Mismatch', 'value' => 'Mismatch' ),
+                    array( 'text' => 'Not Found', 'value' => 'Not Found' ),
+                    array( 'text' => 'Not Run', 'value' => '' ),
+                )
+            )
         );
         return $entry_meta;
     }
@@ -201,9 +241,13 @@ class SFLWAPBCAddOn extends GFAddOn {
             gform_update_meta( $entry['id'], 'pbc_pcn', $attr['PARCEL_NUMBER'] );
         } else {
             gform_update_meta( $entry['id'], 'pbc_status', 'Not Found' );
+            // Ensure variables are cleared if no record found
+            gform_update_meta( $entry['id'], 'pbc_owner_1', '' );
+            gform_update_meta( $entry['id'], 'pbc_owner_2', '' );
+            gform_update_meta( $entry['id'], 'pbc_pcn', '' );
         }
         
-        GFAPI::add_note( $entry['id'], 0, 'PBC Bridge', "Query: $where\nMatch Check: $fname $lname against $o1 / $o2" );
+        GFAPI::add_note( $entry['id'], 0, 'PBC Bridge', "Query: $where\nMatch Check: $fname $lname against " . (isset($o1) ? $o1 : 'N/A') );
         return true;
     }
 
@@ -212,7 +256,7 @@ class SFLWAPBCAddOn extends GFAddOn {
         
         $status = gform_get_meta( $entry['id'], 'pbc_status' ) ?: 'Not Run';
         $o1 = gform_get_meta( $entry['id'], 'pbc_owner_1' ) ?: '';
-        $o2 = gform_get_meta( $entry['id'], 'pbc_owner_2' ) ?: '';
+        $o2 = gform_get_meta( $entry['id'], 'pbc_owner_2' ) ?: ''; // Fixed: Fallback empty string
         $pcn = gform_get_meta( $entry['id'], 'pbc_pcn' ) ?: 'N/A';
         $color = ($status === 'Matched') ? '#27ae60' : '#e74c3c';
         $owners_display = trim($o1 . ($o2 ? ' & ' . $o2 : ''));
