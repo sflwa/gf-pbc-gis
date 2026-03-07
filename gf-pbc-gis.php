@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       SFLWA Gravity Forms PBC Property Appraiser Lookup
  * Plugin URI:        https://github.com/sflwa/gf-pbc-gis/
- * Description:       Verifies property ownership via PBC GIS for HOAs and Condos. Includes "Condo Mode" for unit-specific lookups.
- * Version:           1.4.3
+ * Description:       Verifies property ownership via PBC GIS for HOAs and Condos. Features unordered fuzzy matching and Condo Mode.
+ * Version:           1.4.4
  * Requires at least: 6.9
  * Requires PHP:      8.3
  * Author:            South Florida Web Advisors
@@ -28,7 +28,7 @@ class SFLWA_PBC_Loader {
 
 class SFLWAPBCAddOn extends GFAddOn {
 
-    protected $_version = '1.4.3';
+    protected $_version = '1.4.4';
     protected $_slug = 'gf-pbc-gis';
     protected $_path = 'gf-pbc-gis/gf-pbc-gis.php';
     protected $_full_path = __FILE__;
@@ -48,13 +48,6 @@ class SFLWAPBCAddOn extends GFAddOn {
         add_filter( 'gform_replace_merge_tags', array( $this, 'replace_merge_tags' ), 10, 7 );
         add_filter( 'gform_admin_merge_tags', array( $this, 'add_merge_tags' ), 10, 3 );
         add_filter( 'gform_entry_meta', array( $this, 'register_entry_meta' ), 10, 2 );
-
-        // 1. Dynamic Bulk Action Registration
-        add_filter( 'gform_entry_list_bulk_actions', array( $this, 'add_bulk_action' ), 10, 2 );
-        
-        // 2. Dynamic Bulk Action Handling
-        // Using the global action hook but checking the action string internally for flexibility
-        add_action( 'gform_entry_list_action', array( $this, 'handle_pbc_bulk_action' ), 10, 3 );
     }
 
     public function register_entry_meta( $entry_meta, $form_id ) {
@@ -62,48 +55,8 @@ class SFLWAPBCAddOn extends GFAddOn {
             'label'             => 'Match Status',
             'is_numeric'        => false,
             'is_default_column' => true,
-            'filter'            => array(
-                'operators' => array( 'is', 'isnot' ),
-                'choices'   => array(
-                    array( 'text' => 'Matched', 'value' => 'Matched' ),
-                    array( 'text' => 'Mismatch', 'value' => 'Mismatch' ),
-                    array( 'text' => 'Not Found', 'value' => 'Not Found' ),
-                    array( 'text' => 'Not Run', 'value' => '' ),
-                )
-            )
         );
         return $entry_meta;
-    }
-
-    public function add_bulk_action( $actions, $form_id ) {
-        $settings = $this->get_form_settings( $form_id );
-        if ( ! empty( $settings['enabled'] ) ) {
-            $actions['pbc_bulk_lookup'] = 'Trigger PBC Lookup';
-        }
-        return $actions;
-    }
-
-    public function handle_pbc_bulk_action( $action, $entries, $form_id ) {
-        if ( $action !== 'pbc_bulk_lookup' ) {
-            return;
-        }
-
-        $form = GFAPI::get_form( $form_id );
-        if ( ! $form ) {
-            return;
-        }
-
-        foreach ( $entries as $entry_id ) {
-            $entry = GFAPI::get_entry( $entry_id );
-            if ( is_wp_error( $entry ) ) {
-                continue;
-            }
-            // Trigger the lookup for each entry
-            $this->get_pbc_data_for_entry( $form, $entry, true );
-        }
-
-        // Success message
-        GFCommon::add_header_message( count( $entries ) . ' entries processed for PBC Lookup.' );
     }
 
     public function add_merge_tags( $merge_tags, $form_id, $fields ) {
