@@ -1,16 +1,17 @@
 <?php
 /**
  * Plugin Name:       SFLWA Gravity Forms PBC Property Appraiser Lookup
- * Plugin URI:        https://github.com/sflwa/gf-pbc-gis/
+ * Plugin URI:        https://sflwa.com/pbc-property-bridge
  * Description:       Verifies property ownership via PBC GIS for HOAs and Condos. Includes "Condo Mode" for unit-specific lookups.
- * Version:           1.3.5
- * Requires at least: 6.9
- * Requires PHP:      8.3
- * Author:            South Florida Web Advisors
+ * Version:           1.4.0
+ * Requires at least: 5.8
+ * Requires PHP:      7.4
+ * Author:            Philip Levine
  * Author URI:        https://sflwa.com/
  * License:           GPLv2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       gf-pbc-gis
+ * Domain Path:       /languages
  * Requires Plugins:  gravityforms
  */
 
@@ -27,7 +28,7 @@ class SFLWA_PBC_Loader {
 
 class SFLWAPBCAddOn extends GFAddOn {
 
-    protected $_version = '1.3.5';
+    protected $_version = '1.4.0';
     protected $_min_gravityforms_version = '2.5';
     protected $_slug = 'gf-pbc-gis';
     protected $_path = 'gf-pbc-gis/gf-pbc-gis.php';
@@ -47,23 +48,48 @@ class SFLWAPBCAddOn extends GFAddOn {
         add_filter( 'gform_entry_detail_meta_boxes', array( $this, 'register_meta_box' ), 10, 3 );
         add_filter( 'gform_replace_merge_tags', array( $this, 'replace_merge_tags' ), 10, 7 );
         add_filter( 'gform_admin_merge_tags', array( $this, 'add_merge_tags' ), 10, 3 );
-        
-        // Ensure meta registration is hooked early
         add_filter( 'gform_entry_meta', array( $this, 'register_entry_meta' ), 10, 2 );
+
+        // Bulk Action Hooks
+        add_filter( 'gform_entry_list_bulk_actions', array( $this, 'add_bulk_action' ), 10, 2 );
+        add_action( 'gform_entry_list_action', array( $this, 'handle_bulk_action' ), 10, 3 );
     }
 
-    /**
-     * Specifically registers the status for the Entries List
-     */
     public function register_entry_meta( $entry_meta, $form_id ) {
-        // We register it globally for the plugin to ensure it shows in the UI
+        // Adds searchable/filterable status to Entry List
         $entry_meta['pbc_status'] = array(
             'label'             => 'Match Status',
             'is_numeric'        => false,
-            'update_entry_meta_callback' => null,
             'is_default_column' => true,
+            'filter'            => array(
+                'operators' => array( 'is', 'isnot' ),
+                'choices'   => array(
+                    array( 'text' => 'Matched', 'value' => 'Matched' ),
+                    array( 'text' => 'Mismatch', 'value' => 'Mismatch' ),
+                    array( 'text' => 'Not Found', 'value' => 'Not Found' ),
+                )
+            )
         );
         return $entry_meta;
+    }
+
+    public function add_bulk_action( $actions, $form_id ) {
+        $settings = $this->get_form_settings( $form_id );
+        if ( ! empty( $settings['enabled'] ) ) {
+            $actions['pbc_bulk_lookup'] = 'Trigger PBC Lookup';
+        }
+        return $actions;
+    }
+
+    public function handle_bulk_action( $action, $entries, $form_id ) {
+        if ( $action === 'pbc_bulk_lookup' ) {
+            $form = GFAPI::get_form( $form_id );
+            foreach ( $entries as $entry_id ) {
+                $entry = GFAPI::get_entry( $entry_id );
+                $this->get_pbc_data_for_entry( $form, $entry, true );
+            }
+            return "Processed " . count($entries) . " lookups.";
+        }
     }
 
     public function add_merge_tags( $merge_tags, $form_id, $fields ) {
@@ -117,13 +143,11 @@ class SFLWAPBCAddOn extends GFAddOn {
         $color = ( $status === 'Matched' ) ? '#27ae60' : '#e74c3c';
         echo '<div style="line-height:1.6;">';
         echo '<strong>Status:</strong> <span style="color:'.$color.'; font-weight:bold;">' . esc_html( $status ?: 'Not Run' ) . '</span><br>';
-        
         if ( $pcn ) {
             echo '<strong>Owner 1:</strong> ' . esc_html( $o1 ) . '<br>';
             if ($o2) echo '<strong>Owner 2:</strong> ' . esc_html( $o2 ) . '<br>';
             echo '<strong>PCN:</strong> ' . esc_html( $pcn ) . '<br>';
         }
-
         echo '<div style="margin-top:10px;">';
         echo sprintf( '<input type="submit" value="Re-Run Lookup" class="button" onclick="jQuery(\'#action\').val(\'%s\');" style="width:100%%; margin-bottom:5px;" />', $action );
         if ( $pcn ) {
@@ -162,6 +186,7 @@ class SFLWAPBCAddOn extends GFAddOn {
     }
 
     private function fuzzy_match( $first, $last, $official ) {
+        // Restored unordered string match logic
         $official = strtolower(trim($official));
         if (empty($first) || empty($last) || empty($official)) return false;
         $official = str_replace(array(',', '&'), ' ', $official);
@@ -212,7 +237,7 @@ class SFLWAPBCAddOn extends GFAddOn {
             gform_update_meta( $entry['id'], 'pbc_status', 'Not Found' );
         }
         
-        GFAPI::add_note( $entry['id'], 0, 'PBC Bridge', "Query: $where\nMatch: $fname $lname against $o1 / $o2" );
+        GFAPI::add_note( $entry['id'], 0, 'PBC Bridge', "Query: $where\nMatch Check: $fname $lname against $o1 / $o2" );
         return true;
     }
 
@@ -226,6 +251,7 @@ class SFLWAPBCAddOn extends GFAddOn {
         $color = ($status === 'Matched') ? '#27ae60' : '#e74c3c';
         $owners_display = trim($o1 . ($o2 ? ' & ' . $o2 : ''));
         
+        // Pretty formatted result box
         $html_summary = "
             <table width='100%' border='0' cellpadding='0' cellspacing='0' style='background-color: #f4f7f9; border-radius: 4px; font-family: sans-serif; margin-bottom: 20px;'>
                 <tr><td style='padding: 15px; border-bottom: 1px solid #e1e8ed;'>
