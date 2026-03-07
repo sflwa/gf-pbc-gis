@@ -212,19 +212,42 @@ class SFLWAPBCAddOn extends GFAddOn {
         $fname = rgar( $entry, $name_field_id . '.3' ); 
         $lname = rgar( $entry, $name_field_id . '.6' );
 
-        $unit = rgar( $entry, (string) rgar( $settings, "field_mapping_unit_number" ) );
-        $base = ! empty($settings['static_address']) ? $settings['static_address'] : rgar( $entry, (string) rgar( $settings, "field_mapping_base_addr_field" ) );
         
-        if ( empty($base) ) return false;
+       // Define our base variables from settings/entry
+// --- START PASTE HERE ---
+// 1. Pull the fields from your form mapping
+$mapped_house  = rgar( $entry, (string) rgar( $settings, "field_mapping_house_number" ) );
+$mapped_street = rgar( $entry, (string) rgar( $settings, "field_mapping_street_name" ) );
+$legacy_full   = rgar( $entry, (string) rgar( $settings, "field_mapping_base_addr_field" ) );
+$unit          = rgar( $entry, (string) rgar( $settings, "field_mapping_unit_number" ) );
 
-        if ( ! empty($settings['condo_mode']) ) {
-            $full_string = strtoupper(trim($base . " " . $unit));
-            $where = "SITE_ADDR_STR LIKE '" . esc_sql($full_string) . "%'";
-        } else {
-            $parts = explode(' ', trim($base), 2);
-            $where = "STREET_NUMBER = " . intval($parts[0] ?? 0) . " AND STREET_NAME LIKE '" . esc_sql(strtoupper($parts[1] ?? '')) . "%'";
-        }
+// 2. Determine the Base Address
+$base = ! empty($settings['static_address']) ? $settings['static_address'] : $legacy_full;
 
+/** * 3. BUILD THE STRING CORRECTLY BY MODE
+ * Both results will be used in: SITE_ADDR_STR LIKE '{$full_string}%'
+ */
+if ( ! empty( $settings['condo_mode'] ) ) {
+    /** * CONDO MODE (Options 2 & 3)
+     * Format: [Base Address] + [Space] + [Unit Number]
+     */
+    $full_string = trim($base . " " . $unit);
+} else {
+    /** * REGULAR MODE (Option 1)
+     * Format: [House Number Field] + [Space] + [Street Name Field]
+     * Handles your field swap: uses $unit for house if $mapped_house is empty.
+     */
+    $h_num = ! empty($mapped_house) ? $mapped_house : $unit;
+    $s_name = ! empty($mapped_street) ? $mapped_street : $base;
+    $full_string = trim($h_num . " " . $s_name);
+}
+
+// Convert to uppercase for the DB and build the WHERE clause
+$where = "SITE_ADDR_STR LIKE '" . strtoupper(esc_sql($full_string)) . "%'";
+
+
+// --- END PASTE HERE ---
+// 
         $api_url = add_query_arg( array( 'where' => $where, 'outFields' => 'PARCEL_NUMBER,OWNER_NAME1,OWNER_NAME2', 'f' => 'json' ), "https://services1.arcgis.com/ZWOoUZbtaYePLlPw/arcgis/rest/services/Property_Information_Table/FeatureServer/0/query" );
         $res = wp_remote_get( $api_url, array('timeout' => 25, 'user-agent' => 'Mozilla/5.0') );
         $data = json_decode( wp_remote_retrieve_body($res), true );
@@ -247,7 +270,12 @@ class SFLWAPBCAddOn extends GFAddOn {
             gform_update_meta( $entry['id'], 'pbc_pcn', '' );
         }
         
-        GFAPI::add_note( $entry['id'], 0, 'PBC Bridge', "Query: $where\nMatch Check: $fname $lname against " . (isset($o1) ? $o1 : 'N/A') );
+// 3. THE DEBUG OUTPUT 
+$debug_note = "Query: $where\nMatch Check: $fname $lname against " . ($o1 ?: 'N/A');
+GFAPI::add_note( $entry['id'], 0, 'PBC Bridge', $debug_note );
+	
+	
+       
         return true;
     }
 
