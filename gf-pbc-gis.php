@@ -3,9 +3,9 @@
  * Plugin Name:       SFLWA Gravity Forms PBC Property Appraiser Lookup
  * Plugin URI:        https://github.com/sflwa/gf-pbc-gis/
  * Description:       Verifies property ownership via PBC GIS for HOAs and Condos. Includes "Condo Mode" for unit-specific lookups.
- * Version:           1.4.0
- * Requires at least: 5.8
- * Requires PHP:      7.4
+ * Version:           1.4.1
+ * Requires at least: 6.9
+ * Requires PHP:      8.3
  * Author:            South Florida Web Advisors
  * Author URI:        https://sflwa.com/
  * License:           GPLv2 or later
@@ -28,8 +28,7 @@ class SFLWA_PBC_Loader {
 
 class SFLWAPBCAddOn extends GFAddOn {
 
-    protected $_version = '1.4.0';
-    protected $_min_gravityforms_version = '2.5';
+    protected $_version = '1.4.1';
     protected $_slug = 'gf-pbc-gis';
     protected $_path = 'gf-pbc-gis/gf-pbc-gis.php';
     protected $_full_path = __FILE__;
@@ -56,7 +55,7 @@ class SFLWAPBCAddOn extends GFAddOn {
     }
 
     public function register_entry_meta( $entry_meta, $form_id ) {
-        // Adds searchable/filterable status to Entry List
+        // Adds searchable/filterable status with "Not Run" option
         $entry_meta['pbc_status'] = array(
             'label'             => 'Match Status',
             'is_numeric'        => false,
@@ -67,6 +66,7 @@ class SFLWAPBCAddOn extends GFAddOn {
                     array( 'text' => 'Matched', 'value' => 'Matched' ),
                     array( 'text' => 'Mismatch', 'value' => 'Mismatch' ),
                     array( 'text' => 'Not Found', 'value' => 'Not Found' ),
+                    array( 'text' => 'Not Run', 'value' => '' ), // Captures empty/missing meta
                 )
             )
         );
@@ -88,7 +88,8 @@ class SFLWAPBCAddOn extends GFAddOn {
                 $entry = GFAPI::get_entry( $entry_id );
                 $this->get_pbc_data_for_entry( $form, $entry, true );
             }
-            return "Processed " . count($entries) . " lookups.";
+            // GF requires a redirect or exit to process bulk messages correctly
+            GFCommon::add_header_message( count($entries) . " entries processed for PBC Lookup." );
         }
     }
 
@@ -135,14 +136,14 @@ class SFLWAPBCAddOn extends GFAddOn {
             $entry = GFAPI::get_entry( $entry['id'] ); 
         }
 
-        $status = gform_get_meta( $entry['id'], 'pbc_status' );
+        $status = gform_get_meta( $entry['id'], 'pbc_status' ) ?: 'Not Run';
         $o1 = gform_get_meta( $entry['id'], 'pbc_owner_1' );
         $o2 = gform_get_meta( $entry['id'], 'pbc_owner_2' );
         $pcn    = gform_get_meta( $entry['id'], 'pbc_pcn' );
         
         $color = ( $status === 'Matched' ) ? '#27ae60' : '#e74c3c';
         echo '<div style="line-height:1.6;">';
-        echo '<strong>Status:</strong> <span style="color:'.$color.'; font-weight:bold;">' . esc_html( $status ?: 'Not Run' ) . '</span><br>';
+        echo '<strong>Status:</strong> <span style="color:'.$color.'; font-weight:bold;">' . esc_html( $status ) . '</span><br>';
         if ( $pcn ) {
             echo '<strong>Owner 1:</strong> ' . esc_html( $o1 ) . '<br>';
             if ($o2) echo '<strong>Owner 2:</strong> ' . esc_html( $o2 ) . '<br>';
@@ -186,7 +187,6 @@ class SFLWAPBCAddOn extends GFAddOn {
     }
 
     private function fuzzy_match( $first, $last, $official ) {
-        // Restored unordered string match logic
         $official = strtolower(trim($official));
         if (empty($first) || empty($last) || empty($official)) return false;
         $official = str_replace(array(',', '&'), ' ', $official);
@@ -244,14 +244,13 @@ class SFLWAPBCAddOn extends GFAddOn {
     public function replace_merge_tags( $text, $form, $entry, $url_encode, $esc_html, $nl2br, $format ) {
         if ( ! strpbrk($text, '{}') ) return $text;
         
-        $status = gform_get_meta( $entry['id'], 'pbc_status' ) ?: 'Not Verified';
+        $status = gform_get_meta( $entry['id'], 'pbc_status' ) ?: 'Not Run';
         $o1 = gform_get_meta( $entry['id'], 'pbc_owner_1' ) ?: '';
         $o2 = gform_get_meta( $entry['id'], 'pbc_owner_2' ) ?: '';
         $pcn = gform_get_meta( $entry['id'], 'pbc_pcn' ) ?: 'N/A';
         $color = ($status === 'Matched') ? '#27ae60' : '#e74c3c';
         $owners_display = trim($o1 . ($o2 ? ' & ' . $o2 : ''));
         
-        // Pretty formatted result box
         $html_summary = "
             <table width='100%' border='0' cellpadding='0' cellspacing='0' style='background-color: #f4f7f9; border-radius: 4px; font-family: sans-serif; margin-bottom: 20px;'>
                 <tr><td style='padding: 15px; border-bottom: 1px solid #e1e8ed;'>
