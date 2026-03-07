@@ -85,7 +85,7 @@ class SFLWAPBCAddOn extends GFAddOn {
         $entry_meta['pbc_status'] = array(
             'label'             => 'Match Status',
             'is_numeric'        => false,
-            'is_default_column' => true,
+            'is_default_column' => false,
             'filter'            => array(
                 'operators' => array( 'is', 'isnot' ),
                 'choices'   => array(
