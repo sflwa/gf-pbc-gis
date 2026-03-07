@@ -1,24 +1,26 @@
 === SFLWA Gravity Forms PBC Property Appraiser Lookup ===
 Contributors: sflwa
-Tags: gravity forms, pbc, property appraiser, hoa, condo
+Tags: gravity forms, pbc, property appraiser, hoa, condo, bulk actions
 Requires at least: 5.8
-Tested up to: 6.9
+Tested up to: 6.4
 Requires PHP: 7.4
-Stable tag: 1.3.5
+Stable tag: 1.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
-Verify property ownership in Palm Beach County (PBC) directly within Gravity Forms. Perfect for HOAs and Condo Associations.
+
+Verify property ownership in Palm Beach County (PBC) directly within Gravity Forms. Includes advanced filtering and bulk lookup tools for HOA and Condo managers.
 
 == Description ==
 
 The SFLWA Gravity Forms PBC Property Appraiser Bridge allows HOA and Condo Association managers to verify property ownership in real-time. By connecting to the Palm Beach County Property Appraiser's ArcGIS data, the plugin cross-references resident names against official county records.
 
 Key features include:
+* **Bulk Lookups**: Process hundreds of entries at once using the "Trigger PBC Lookup" bulk action in the Entry List.
+* **Match Status Filtering**: Quickly filter your entry list to show only "Matched", "Mismatch", or "Not Found" records.
 * **Condo Mode**: Optimized for multi-unit buildings where the unit number is appended to the site address string.
 * **Static Address Support**: Hard-code a community address so users only need to enter their unit number.
 * **Dual Owner Matching**: Automatically checks both OWNER_NAME1 and OWNER_NAME2 fields for a match.
 * **Name Reversal Logic**: Intelligently matches "First Last" against the database's "LAST FIRST" format.
-* **Entry List Integration**: View the verification "Match Status" directly in your Gravity Forms entry list.
 
 == Installation ==
 
@@ -29,13 +31,18 @@ Key features include:
 
 == Frequently Asked Questions ==
 
-= Does this work for single-family homes? =
-Yes. Disable 'Condo Mode' in the settings to use standard House Number and Street Name logic.
+= How do I use Bulk Actions? =
+In the Gravity Forms Entry List, select the entries you wish to verify, open the "Bulk Actions" dropdown, and select "Trigger PBC Lookup".
 
-= Which field is used for matching? =
-The plugin compares the 'Resident Name' field against the official owner names on record at the PBC Property Appraiser's office.
+= Can I filter by Mismatches? =
+Yes. Click "Add Filter" on the Entry List page and select "Match Status" is "Mismatch".
 
 == Changelog ==
+
+= 1.4.0 =
+* Added "Trigger PBC Lookup" Bulk Action to Entry List.
+* Added "Match Status" search filters to Entry List.
+* Optimized metadata registration for better UI visibility.
 
 = 1.3.5 =
 * Fixed Match Status column visibility in the Entry List UI.
