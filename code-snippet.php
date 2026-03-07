@@ -1,4 +1,5 @@
 <?php
+// Trigger via: /wp-admin/index.php?gf-pbc-gis=1&addressupdate=1
 add_action( 'admin_init', 'sflwa_pbc_directional_standardizer' );
 
 function sflwa_pbc_directional_standardizer() {
