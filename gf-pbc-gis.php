@@ -3,7 +3,7 @@
  * Plugin Name:       SFLWA Gravity Forms PBC Property Appraiser Lookup
  * Plugin URI:        https://github.com/sflwa/gf-pbc-gis/
  * Description:       Verifies property ownership via PBC GIS for HOAs and Condos. Includes "Condo Mode" for unit-specific lookups.
- * Version:           1.5.5
+ * Version:           1.5.6
  * Requires at least: 6.9
  * Requires PHP:      8.3
  * Author:            South Florida Web Advisors
@@ -289,25 +289,38 @@ GFAPI::add_note( $entry['id'], 0, 'PBC Bridge', $debug_note );
         $color = ($status === 'Matched') ? '#27ae60' : '#e74c3c';
         $owners_display = trim($o1 . ($o2 ? ' & ' . $o2 : ''));
         
-        $html_summary = "
-            <table width='100%' border='0' cellpadding='0' cellspacing='0' style='background-color: #f4f7f9; border-radius: 4px; font-family: sans-serif; margin-bottom: 20px;'>
-                <tr><td style='padding: 15px; border-bottom: 1px solid #e1e8ed;'>
-                    <span style='font-size: 11px; font-weight: bold; text-transform: uppercase; color: #5e6d77; display: block; margin-bottom: 5px;'>PBC Property Verification</span>
-                    <span style='font-size: 18px; font-weight: bold; color: $color;'>$status</span>
+        $html_summary = $html_summary = "
+    <table width='100%' border='0' cellpadding='0' cellspacing='0' style='background-color: #f4f7f9; border-radius: 4px; font-family: sans-serif; margin-bottom: 20px;'>
+        <tr><td style='padding: 15px; border-bottom: 1px solid #e1e8ed;'>
+            <span style='font-size: 11px; font-weight: bold; text-transform: uppercase; color: #5e6d77; display: block; margin-bottom: 5px;'>PBC Property Verification</span>
+            <span style='font-size: 18px; font-weight: bold; color: $color;'>$status</span>
+        </td></tr>
+        <tr><td style='padding: 15px; background-color: #ffffff;'>
+            <table width='100%' border='0'>
+                <tr><td style='padding-bottom: 10px; border-bottom: 1px solid #f0f3f5;'>
+                    <span style='font-size: 11px; font-weight: bold; color: #919da5;'>OFFICIAL OWNER(S)</span><br>
+                    <span style='font-size: 14px; color: #2c3e50;'>$owners_display</span>
                 </td></tr>
-                <tr><td style='padding: 15px; background-color: #ffffff;'>
-                    <table width='100%' border='0'>
-                        <tr><td style='padding-bottom: 10px; border-bottom: 1px solid #f0f3f5;'>
-                            <span style='font-size: 11px; font-weight: bold; color: #919da5;'>OFFICIAL OWNER(S)</span><br>
-                            <span style='font-size: 14px; color: #2c3e50;'>$owners_display</span>
-                        </td></tr>
-                        <tr><td style='padding-top: 10px;'>
-                            <span style='font-size: 11px; font-weight: bold; color: #919da5;'>PARCEL CONTROL NUMBER (PCN)</span><br>
-                            <span style='font-size: 14px; color: #2c3e50;'>$pcn</span>
-                        </td></tr>
-                    </table>
-                </td></tr>
-            </table>";
+                <tr><td style='padding-top: 10px; padding-bottom: 15px;'>
+                    <span style='font-size: 11px; font-weight: bold; color: #919da5;'>PARCEL CONTROL NUMBER (PCN)</span><br>
+                    <span style='font-size: 14px; color: #2c3e50;'>$pcn</span>
+                </td></tr>";
+
+// Only add the button row if we have a valid PCN to link to
+if ( $pcn && $pcn !== 'N/A' ) {
+    $html_summary .= "
+                <tr><td>
+                    <a href='https://pbcpao.gov/Property/Details?parcelId=$pcn' target='_blank' 
+                       style='display: inline-block; background-color: #2c3e50; color: #ffffff; padding: 10px 15px; text-decoration: none; border-radius: 4px; font-size: 13px; font-weight: bold;'>
+                       View Official Property Record &rarr;
+                    </a>
+                </td></tr>";
+}
+
+$html_summary .= "
+            </table>
+        </td></tr>
+    </table>";
 
         return str_replace( 
             array('{pbc_match_status}', '{pbc_raw_data}', '{pbc_pcn}', '{pbc_owners}', '{pbc_search_url}'), 
