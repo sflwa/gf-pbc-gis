@@ -3,7 +3,7 @@ Contributors: sflwa
 Tags: gravity forms, pbc, property appraiser, palm beach county, gis, verification
 Requires at least: 5.0
 Tested up to: 6.4
-Stable tag: 1.9.3
+Stable tag: 1.9.4
 License: GPLv2 or later
 
 A professional-grade bridge between Gravity Forms and the Palm Beach County GIS (ArcGIS) Property Information Table.
